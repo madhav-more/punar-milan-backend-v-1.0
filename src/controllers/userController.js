@@ -71,7 +71,7 @@ const getUserById = async (req, res, next) => {
 };
 
 const cloudinary = require('../config/cloudinary');
-const fs = require('fs');
+
 
 // @desc    Upload profile photo
 // @route   POST /api/users/profile/photo
@@ -83,28 +83,35 @@ const uploadProfilePhoto = async (req, res, next) => {
             throw new Error('Please upload an image');
         }
 
-        const result = await cloudinary.uploader.upload(req.file.path, {
-            folder: 'punar_milan/profiles',
-            width: 500,
-            crop: "scale"
-        });
+        // Upload directly from memory buffer
+        const uploadStream = (fileBuffer) => {
+            return new Promise((resolve, reject) => {
+                const stream = cloudinary.uploader.upload_stream(
+                    {
+                        folder: 'punar_milan/profiles',
+                        width: 500,
+                        crop: "scale"
+                    },
+                    (error, result) => {
+                        if (error) reject(error);
+                        else resolve(result);
+                    }
+                );
+                stream.end(fileBuffer);
+            });
+        };
+
+        const result = await uploadStream(req.file.buffer);
 
         const user = await User.findById(req.user._id);
         user.profilePhoto = result.secure_url;
         await user.save();
-
-        // Clean up local file
-        fs.unlinkSync(req.file.path);
 
         res.json({
             profilePhoto: user.profilePhoto,
             profileCompletion: user.profileCompletion
         });
     } catch (error) {
-        // Clean up local file on error if it exists
-        if (req.file && fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path);
-        }
         next(error);
     }
 };
